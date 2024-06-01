@@ -9,38 +9,20 @@ export const streamAdapter: ChatAdapter = {
         prompt: string,
         observer: StreamingAdapterObserver,
     ) => {
-        const body = { prompt };
-        const response = await fetch(demoProxyServerUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-        });
+        const canCreate = await window.ai.canCreateTextSession();
+        // canCreate will be one of the following:
+        // * "readily": the model is available on-device and so creating will happen quickly
+        // * "after-download": the model is not available on-device, but the device is capable,
+        //   so creating the session will start the download process (which can take a while).
+        // * "no": the model is not available for this device.
 
-        if (response.status !== 200) {
-            observer.error(new Error("Failed to connect to the server"));
-            return;
-        }
+        if (canCreate !== "no") {
+            const session = await window.ai.createTextSession();
 
-        if (!response.body) {
-            return;
-        }
-
-        // Read a stream of server-sent events
-        // and feed them to the observer as they are being generated
-        const reader = response.body.getReader();
-        const textDecoder = new TextDecoder();
-        let doneReading = false;
-
-        while (!doneReading) {
-            const { value, done } = await reader.read();
-            if (done) {
-                doneReading = true;
-                continue;
-            }
-
-            const content = textDecoder.decode(value);
-            if (content) {
-                observer.next(content);
+            // Prompt the model and stream the result:
+            const stream = session.promptStreaming(prompt);
+            for await (const chunk of stream) {
+                observer.next(chunk);
             }
         }
 
